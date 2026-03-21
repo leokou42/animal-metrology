@@ -20,7 +20,7 @@ Coordinates are returned in original image pixel space.
 
 === Model Auto-Download ===
 On first use, the ONNX model is downloaded from the OpenMMLab model zoo
-to the models/ directory (~52 MB). Subsequent calls use the cached file.
+to the weights/ directory (~52 MB). Subsequent calls use the cached file.
 """
 
 import logging

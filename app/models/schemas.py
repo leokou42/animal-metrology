@@ -21,39 +21,35 @@ class AnimalDetection(BaseModel):
 
 
 class IntraAnimalDistance(BaseModel):
+    """Binocular distance for a single animal (left_eye → right_eye)."""
     animal_id: int
     category: str
     left_eye: Point
     right_eye: Point
-    distance_px: float
+    # Layer 1: pixel distance
+    pixel_distance: float
+    # Layer 2: metric distance (None if no metric depth available)
+    metric_distance_m: float | None = None
+    depth_left_eye_m: float | None = None
+    depth_right_eye_m: float | None = None
+    focal_length_px: float | None = None
+    # Layer 3: sanity check against known IOD
+    known_iod_range_cm: list[float] | None = None
+    sanity_check_result: str | None = None  # PASS / WARNING / FAIL
 
 
 class InterAnimalDistance(BaseModel):
+    """Distance between right eyes of two animals."""
     animal_a_id: int
     animal_a_category: str
     animal_b_id: int
     animal_b_category: str
     eye_a: Point
     eye_b: Point
-    distance_px: float
-
-
-class DepthCorrectedInterDistance(BaseModel):
-    """Depth-corrected distance between two animals' right eyes.
-
-    Each entry represents one pair from itertools.combinations.
-    e.g., 3 animals → 3 pairs: (0,1), (0,2), (1,2)
-    """
-    animal_a_id: int
-    animal_a_category: str
-    animal_b_id: int
-    animal_b_category: str
-    eye_a: Point
-    eye_b: Point
+    # Layer 1: pixel distance
     pixel_distance: float
-    depth_corrected_distance: float
-    depth_a: float
-    depth_b: float
+    # Layer 2: metric distance
+    metric_distance_m: float | None = None
 
 
 class MeasurementResult(BaseModel):
@@ -64,7 +60,6 @@ class MeasurementResult(BaseModel):
     animals: list[AnimalDetection]
     intra_distances: list[IntraAnimalDistance]
     inter_distances: list[InterAnimalDistance]
-    depth_corrected_inter_distances: list[DepthCorrectedInterDistance] | None = None
     annotated_image_path: str | None = None
 
 

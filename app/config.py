@@ -17,10 +17,11 @@ class Settings(BaseSettings):
     iou_threshold: float = 0.45
 
     # Eye detection model (RTMPose + AP-10K)
-    eye_model_path: str = "models/rtmpose_ap10k.onnx"
+    eye_model_path: str = "weights/rtmpose_ap10k.onnx"
     eye_confidence_threshold: float = 0.3
 
-    # Depth estimation model (Depth Anything V2)
+    # Depth estimation (Depth Pro primary, DA V2 fallback)
+    depth_pro_checkpoint: str = "weights/depth_pro.pt"
     depth_model: str = "depth-anything/Depth-Anything-V2-Small-hf"
     depth_enabled: bool = True
 

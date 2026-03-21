@@ -11,8 +11,8 @@ build/
 # COCO dataset (too large for git)
 data/coco/
 
-# Model weights
-models/
+# Model weights (auto-downloaded on first run)
+weights/
 *.pt
 *.pth
 *.onnx
