@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  api:
+    build: .
+    container_name: animal-eye-metrology
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./outputs:/app/outputs
+    env_file:
+      - .env
+    environment:
+      - COCO_IMAGES_DIR=/app/data/coco/val2017
+      - COCO_ANNOTATIONS_FILE=/app/data/coco/annotations/instances_val2017.json
+    restart: unless-stopped
