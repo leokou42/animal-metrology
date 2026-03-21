@@ -1,115 +1,165 @@
-"""Monocular depth estimation service using Depth Anything V2.
+"""Monocular depth estimation service with metric depth support.
 
 === Responsibility ===
-Estimate per-pixel relative depth from a single RGB image.
-Used by the measurement service to correct inter-animal distances
-for perspective distortion (animals at different depths).
+Estimate per-pixel depth from a single RGB image. Provides both the depth map
+and (when available) the estimated focal length for 3D metric distance computation.
 
-=== Why Depth Anything V2 ===
-1. State-of-the-art monocular depth estimation — zero-shot, no fine-tuning needed
-2. Small variant balances speed and accuracy for CPU inference
-3. Outputs relative depth map at original image resolution
-4. Available via HuggingFace transformers pipeline (auto-downloads on first use)
+=== Model Priority ===
+1. Apple Depth Pro — outputs metric depth (meters) + focal length (pixels)
+   Best choice: enables true 3D distance calculation without camera calibration.
+2. Depth Anything V2 (fallback) — outputs relative depth (no units)
+   Used when Depth Pro is not installed or fails to load.
 
 === Data Flow ===
-Image (BGR numpy) → PIL conversion → Depth Anything V2 → depth_map (H×W float)
+Image (BGR numpy) → Model inference → DepthResult(depth_map, focal_length, is_metric)
 
 === Graceful Fallback ===
-If torch or transformers is not installed, the service logs a warning
-and returns None. The pipeline continues with pixel-only distances.
+If neither model is available, the service returns None and the pipeline
+continues with pixel-only distances.
 """
 
 import logging
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
 
 import numpy as np
 
 from app.config import settings
 
-if TYPE_CHECKING:
-    from transformers import Pipeline
-
 logger = logging.getLogger(__name__)
 
-# Flag to track if depth estimation is available
-_depth_available: bool | None = None
+
+@dataclass
+class DepthResult:
+    """Output from depth estimation.
+
+    Attributes:
+        depth_map: float32 array (H, W). Per-pixel depth values.
+        focal_length_px: Estimated focal length in pixels (None for relative depth).
+        is_metric: True if depth values are in meters (Depth Pro),
+                   False if relative/unitless (DA V2).
+    """
+    depth_map: np.ndarray
+    focal_length_px: float | None
+    is_metric: bool
 
 
-def _check_depth_available() -> bool:
-    """Check if torch and transformers are installed."""
-    global _depth_available
-    if _depth_available is not None:
-        return _depth_available
+def _try_load_depth_pro() -> object | None:
+    """Try to load Apple Depth Pro. Returns (model, transform) or None."""
     try:
-        import torch  # noqa: F401
-        import transformers  # noqa: F401
-        _depth_available = True
-    except ImportError:
-        logger.warning(
-            "torch or transformers not installed — depth estimation disabled. "
-            "Install with: pip install torch transformers"
+        import depth_pro
+        import torch
+        from depth_pro.depth_pro import DepthProConfig, DEFAULT_MONODEPTH_CONFIG_DICT
+
+        checkpoint = settings.depth_pro_checkpoint
+        config = DepthProConfig(
+            patch_encoder_preset=DEFAULT_MONODEPTH_CONFIG_DICT.patch_encoder_preset,
+            image_encoder_preset=DEFAULT_MONODEPTH_CONFIG_DICT.image_encoder_preset,
+            decoder_features=DEFAULT_MONODEPTH_CONFIG_DICT.decoder_features,
+            checkpoint_uri=checkpoint,
+            fov_encoder_preset=DEFAULT_MONODEPTH_CONFIG_DICT.fov_encoder_preset,
+            use_fov_head=DEFAULT_MONODEPTH_CONFIG_DICT.use_fov_head,
         )
-        _depth_available = False
-    return _depth_available
+
+        model, transform = depth_pro.create_model_and_transforms(
+            config=config, device=torch.device("cpu")
+        )
+        model.eval()
+        logger.info("Loaded Apple Depth Pro (metric depth)")
+        return model, transform
+    except Exception as e:
+        logger.info("Depth Pro not available (%s), trying fallback", e)
+        return None
+
+
+def _try_load_da_v2() -> object | None:
+    """Try to load Depth Anything V2. Returns pipeline or None."""
+    try:
+        from transformers import pipeline as hf_pipeline
+
+        pipe = hf_pipeline(
+            "depth-estimation",
+            model=settings.depth_model,
+            device="cpu",
+        )
+        logger.info("Loaded Depth Anything V2 (relative depth)")
+        return pipe
+    except Exception as e:
+        logger.info("Depth Anything V2 not available (%s)", e)
+        return None
 
 
 class DepthEstimationService:
-    """Estimate per-pixel depth using Depth Anything V2.
+    """Estimate per-pixel depth with automatic model selection.
 
-    === Lifecycle ===
-    1. __init__: Loads the depth estimation pipeline (auto-downloads model)
-    2. estimate_depth(): Returns depth map for an image
-    3. Model stays loaded for entire API lifecycle (singleton pattern)
-
-    === Output Format ===
-    depth_map is a float32 numpy array with shape (H, W).
-    Higher values = farther from camera.
-    Values are relative (not metric meters).
+    Tries Depth Pro first (metric depth in meters + focal length).
+    Falls back to Depth Anything V2 (relative depth, no focal length).
     """
 
-    def __init__(self, model_name: str | None = None):
-        """Load Depth Anything V2 pipeline.
+    def __init__(self):
+        self._depth_pro = None
+        self._da_v2 = None
+        self._backend = None
+
+        # Try Depth Pro first
+        result = _try_load_depth_pro()
+        if result is not None:
+            self._depth_pro = result  # (model, transform)
+            self._backend = "depth_pro"
+            return
+
+        # Fallback to Depth Anything V2
+        result = _try_load_da_v2()
+        if result is not None:
+            self._da_v2 = result
+            self._backend = "da_v2"
+            return
+
+        raise RuntimeError("No depth estimation model available")
+
+    @property
+    def backend_name(self) -> str:
+        return self._backend or "none"
+
+    def estimate_depth(self, image: np.ndarray) -> DepthResult:
+        """Estimate depth from a BGR image.
 
         Args:
-            model_name: HuggingFace model ID. Defaults to settings.depth_model.
-        """
-        model_id = model_name or settings.depth_model
-
-        logger.info("Loading Depth Anything V2 model: %s", model_id)
-
-        from transformers import pipeline
-
-        self.pipe: Pipeline = pipeline(
-            "depth-estimation",
-            model=model_id,
-            device="cpu",
-        )
-        logger.info("Depth model loaded successfully")
-
-    def estimate_depth(self, image: np.ndarray) -> np.ndarray:
-        """Estimate per-pixel depth from a BGR image.
-
-        Args:
-            image: BGR numpy array (H, W, 3) — OpenCV format
+            image: BGR numpy array (H, W, 3)
 
         Returns:
-            depth_map: float32 numpy array (H, W).
-                       Higher values = farther from camera.
+            DepthResult with depth_map, optional focal_length, and is_metric flag
         """
-        from PIL import Image
+        if self._backend == "depth_pro":
+            return self._run_depth_pro(image)
+        elif self._backend == "da_v2":
+            return self._run_da_v2(image)
+        else:
+            raise RuntimeError("No depth backend loaded")
 
-        # Convert BGR (OpenCV) → RGB (PIL)
-        rgb = image[:, :, ::-1]
-        pil_image = Image.fromarray(rgb)
+    def _run_depth_pro(self, image: np.ndarray) -> DepthResult:
+        """Run Apple Depth Pro inference."""
+        import torch
+        import depth_pro
+        from PIL import Image as PILImage
+        import tempfile
 
+        model, transform = self._depth_pro
         h, w = image.shape[:2]
 
-        # Run depth estimation
-        result = self.pipe(pil_image)
+        # Depth Pro's load_rgb expects a file path, so save temporarily
+        rgb = image[:, :, ::-1]
+        pil_img = PILImage.fromarray(rgb)
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            pil_img.save(tmp.name)
+            img_tensor, _, f_px = depth_pro.load_rgb(tmp.name)
 
-        # result["depth"] is a PIL Image, convert to numpy
-        depth_pil = result["depth"]
-        depth_map = np.array(depth_pil, dtype=np.float32)
+        img_tensor = transform(img_tensor)
+
+        with torch.no_grad():
+            prediction = model.infer(img_tensor, f_px=f_px)
+
+        depth_map = prediction["depth"].cpu().numpy()
+        focal_length = prediction["focallength_px"].item()
 
         # Resize to original image dimensions if needed
         if depth_map.shape[0] != h or depth_map.shape[1] != w:
@@ -117,40 +167,70 @@ class DepthEstimationService:
             depth_map = cv2.resize(depth_map, (w, h), interpolation=cv2.INTER_LINEAR)
 
         logger.info(
-            "Depth estimation complete: shape=%s, range=[%.2f, %.2f]",
-            depth_map.shape,
-            depth_map.min(),
-            depth_map.max(),
+            "Depth Pro: shape=%s, range=[%.2f, %.2f]m, focal=%.1fpx",
+            depth_map.shape, depth_map.min(), depth_map.max(), focal_length,
         )
 
-        return depth_map
+        return DepthResult(
+            depth_map=depth_map.astype(np.float32),
+            focal_length_px=focal_length,
+            is_metric=True,
+        )
+
+    def _run_da_v2(self, image: np.ndarray) -> DepthResult:
+        """Run Depth Anything V2 inference (relative depth)."""
+        from PIL import Image as PILImage
+
+        rgb = image[:, :, ::-1]
+        pil_image = PILImage.fromarray(rgb)
+        h, w = image.shape[:2]
+
+        result = self._da_v2(pil_image)
+        depth_pil = result["depth"]
+        depth_map = np.array(depth_pil, dtype=np.float32)
+
+        if depth_map.shape[0] != h or depth_map.shape[1] != w:
+            import cv2
+            depth_map = cv2.resize(depth_map, (w, h), interpolation=cv2.INTER_LINEAR)
+
+        logger.info(
+            "DA V2: shape=%s, range=[%.2f, %.2f] (relative)",
+            depth_map.shape, depth_map.min(), depth_map.max(),
+        )
+
+        return DepthResult(
+            depth_map=depth_map,
+            focal_length_px=None,
+            is_metric=False,
+        )
+
 
 
 # ============================================================
-# Singleton — avoid reloading the model on every request
+# Singleton
 # ============================================================
 _depth_service: DepthEstimationService | None = None
+_depth_init_attempted: bool = False
 
 
 def get_depth_estimation_service() -> DepthEstimationService | None:
     """Get or create the DepthEstimationService singleton.
 
-    Returns None if depth estimation is not available (missing dependencies)
-    or disabled in settings.
+    Returns None if depth estimation is disabled or no model available.
     """
-    global _depth_service
+    global _depth_service, _depth_init_attempted
 
     if not settings.depth_enabled:
         return None
 
-    if not _check_depth_available():
-        return None
+    if _depth_init_attempted:
+        return _depth_service
 
-    if _depth_service is None:
-        try:
-            _depth_service = DepthEstimationService()
-        except Exception:
-            logger.warning("Failed to load depth model, disabling depth estimation", exc_info=True)
-            return None
+    _depth_init_attempted = True
+    try:
+        _depth_service = DepthEstimationService()
+    except Exception:
+        logger.warning("Depth estimation unavailable", exc_info=True)
+        _depth_service = None
 
     return _depth_service

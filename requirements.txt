@@ -17,6 +17,10 @@ httpx==0.27.0
 rtmlib>=0.0.15
 onnxruntime>=1.15.0
 
-# Depth estimation (Depth Anything V2) — optional, pipeline falls back gracefully
+# Depth estimation — optional, pipeline falls back gracefully
+# Primary: Apple Depth Pro (metric depth in meters + focal length)
+#   pip install git+https://github.com/apple/ml-depth-pro.git
+# Fallback: Depth Anything V2 (relative depth)
 transformers>=4.35.0
 torch>=2.0.0
+huggingface-hub>=0.20.0

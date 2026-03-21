@@ -118,23 +118,29 @@ def _run_pipeline(
     ]
 
     # --- Stage 3: Distance measurement (if steps == full) ---
-    depth_corrected_inter_distances = None
     if steps == PipelineSteps.full:
         from app.services.measurement import measure_all
 
         # Try depth estimation (optional, graceful fallback)
         depth_map = None
+        focal_length = None
         try:
             from app.services.depth_estimation import get_depth_estimation_service
 
             depth_svc = get_depth_estimation_service()
             if depth_svc is not None and seg_result.raw_image is not None:
-                depth_map = depth_svc.estimate_depth(seg_result.raw_image)
+                depth_result = depth_svc.estimate_depth(seg_result.raw_image)
+                depth_map = depth_result.depth_map
+                if depth_result.is_metric:
+                    focal_length = depth_result.focal_length_px
         except Exception:
             logger.warning("Depth estimation failed, continuing without it", exc_info=True)
 
-        intra_distances, inter_distances, depth_corrected_inter_distances = measure_all(
-            animals, depth_map=depth_map
+        intra_distances, inter_distances = measure_all(
+            animals,
+            depth_map=depth_map,
+            focal_length=focal_length,
+            image_size=seg_result.image_hw,
         )
 
     # --- Stage 4: Visualization (if requested) ---
@@ -146,7 +152,7 @@ def _run_pipeline(
         output_path = settings.output_dir / output_filename
         annotated_image_path = f"/outputs/{output_filename}"
 
-        # Build viz-compatible dicts (only include data we actually computed)
+        # Build viz-compatible dicts
         eye_data = None
         intra_dicts = None
         inter_dicts = None
@@ -165,28 +171,23 @@ def _run_pipeline(
             intra_dicts = [
                 {
                     "animal_id": d.animal_id,
+                    "category": d.category,
                     "left_eye": (d.left_eye.x, d.left_eye.y),
                     "right_eye": (d.right_eye.x, d.right_eye.y),
-                    "distance_px": d.distance_px,
+                    "distance_px": d.pixel_distance,
+                    "metric_distance_m": d.metric_distance_m,
+                    "sanity_check_result": d.sanity_check_result,
                 }
                 for d in intra_distances
             ]
-            # Build a lookup for depth-corrected values by pair
-            depth_lookup = {}
-            if depth_corrected_inter_distances:
-                for dc in depth_corrected_inter_distances:
-                    depth_lookup[(dc.animal_a_id, dc.animal_b_id)] = dc.depth_corrected_distance
-
             inter_dicts = [
                 {
                     "animal_a_id": d.animal_a_id,
                     "animal_b_id": d.animal_b_id,
                     "eye_a": (d.eye_a.x, d.eye_a.y),
                     "eye_b": (d.eye_b.x, d.eye_b.y),
-                    "distance_px": d.distance_px,
-                    "depth_corrected_distance": depth_lookup.get(
-                        (d.animal_a_id, d.animal_b_id)
-                    ),
+                    "distance_px": d.pixel_distance,
+                    "metric_distance_m": d.metric_distance_m,
                 }
                 for d in inter_distances
             ]
@@ -207,7 +208,6 @@ def _run_pipeline(
         animals=animals,
         intra_distances=intra_distances,
         inter_distances=inter_distances,
-        depth_corrected_inter_distances=depth_corrected_inter_distances,
         annotated_image_path=annotated_image_path,
     ).model_dump()
 

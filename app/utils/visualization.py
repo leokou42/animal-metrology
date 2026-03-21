@@ -208,6 +208,14 @@ def draw_distances(
         intra_distances: list of dicts with left_eye, right_eye, distance_px, animal_id
         inter_distances: list of dicts with eye_a, eye_b, distance_px, animal_a_id, animal_b_id
     """
+    # Sanity check icon colors (BGR)
+    SANITY_COLORS = {
+        "PASS": (0, 200, 0),      # green
+        "WARNING": (0, 200, 255),  # yellow
+        "FAIL": (0, 0, 255),       # red
+    }
+    SANITY_ICONS = {"PASS": "v", "WARNING": "!", "FAIL": "x"}
+
     # --- Intra-animal: solid colored lines ---
     if intra_distances:
         for d in intra_distances:
@@ -217,13 +225,27 @@ def draw_distances(
 
             cv2.line(image, pt1, pt2, color, thickness=2)
 
-            # Distance label at midpoint
+            # Build 3-layer label: "64.8 px | 0.19m | v cat IOD"
             mid_x = (pt1[0] + pt2[0]) // 2
             mid_y = (pt1[1] + pt2[1]) // 2
-            label = f"{d['distance_px']:.1f}px"
+
+            label = f"{d['distance_px']:.1f} px"
+            label_color = color
+
+            metric_m = d.get("metric_distance_m")
+            if metric_m is not None:
+                label += f" | {metric_m:.2f}m"
+
+                check = d.get("sanity_check_result")
+                category = d.get("category", "")
+                if check and check in SANITY_ICONS:
+                    icon = SANITY_ICONS[check]
+                    label += f" | {icon} {category} IOD"
+                    label_color = SANITY_COLORS.get(check, color)
+
             draw_text_with_bg(
                 image, label, (mid_x, mid_y - 8),
-                font_scale=FONT_SCALE_DISTANCE, color=color,
+                font_scale=FONT_SCALE_DISTANCE, color=label_color,
             )
 
     # --- Inter-animal: dashed white lines ---
@@ -232,17 +254,17 @@ def draw_distances(
             pt1 = (int(d["eye_a"][0]), int(d["eye_a"][1]))
             pt2 = (int(d["eye_b"][0]), int(d["eye_b"][1]))
 
-            # Draw dashed line by breaking into segments
             _draw_dashed_line(image, pt1, pt2, color=(255, 255, 255), thickness=2)
 
-            # Distance label at midpoint
             mid_x = (pt1[0] + pt2[0]) // 2
             mid_y = (pt1[1] + pt2[1]) // 2
-            label_text = f"{d['distance_px']:.1f}px"
-            # Add depth-corrected distance if available
-            if "depth_corrected_distance" in d and d["depth_corrected_distance"] is not None:
-                label_text += f" (depth: {d['depth_corrected_distance']:.1f}px)"
-            # Add animal pair info
+
+            # Build label: "#0-#1 R-eye: 295.6 px | 2.41m"
+            label_text = f"{d['distance_px']:.1f} px"
+            metric_m = d.get("metric_distance_m")
+            if metric_m is not None:
+                label_text += f" | {metric_m:.2f}m"
+
             pair_label = f"#{d['animal_a_id']}-#{d['animal_b_id']} R-eye: {label_text}"
             draw_text_with_bg(
                 image, pair_label, (mid_x, mid_y - 8),
