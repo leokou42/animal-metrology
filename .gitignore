@@ -1,0 +1,32 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# COCO dataset (too large for git)
+data/coco/
+
+# Model weights
+models/
+*.pt
+*.pth
+*.onnx
+
+# Outputs
+outputs/*.jpg
+outputs/*.png
+outputs/*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
