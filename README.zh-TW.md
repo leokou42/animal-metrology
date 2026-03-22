@@ -108,19 +108,73 @@ Swagger UI：`http://localhost:8000/docs`
 |------|------|------|------|
 | `steps` | `segment`、`eyes`、`full` | `full` | 管線深度 |
 | `visualize` | `true`、`false` | `true` | 是否產生標註影像 |
+| `depth_pro` | `none`、`fast`、`metric` | `metric` | 深度估計模式 |
+
+#### 深度模式說明
+
+| 模式 | 模型 | 輸出 | 速度 | 說明 |
+|------|------|------|------|------|
+| `none` | — | 僅像素距離 | 即時 | 不使用深度模型，最快 |
+| `fast` | Depth Anything V2 | 相對深度 | ~2 秒 | 透視修正的像素距離 |
+| `metric` | Apple Depth Pro | 度量深度（公尺） | ~30-60 秒 | 真實 3D 距離 + 合理性檢查 |
+
+> 若未安裝 Depth Pro 但選擇了 `metric`，系統會自動降級為 `fast` 模式並記錄警告。
 
 ### 範例
 
 ```bash
-# 完整管線（三層 + 視覺化）
+# 完整管線，度量深度（預設，約 30-60 秒）
 curl -X POST "http://localhost:8000/api/v1/analyze/287545"
+
+# 完整管線，僅像素距離（最快）
+curl -X POST "http://localhost:8000/api/v1/analyze/287545?depth_pro=none"
+
+# 完整管線，快速深度（約 2 秒）
+curl -X POST "http://localhost:8000/api/v1/analyze/287545?depth_pro=fast"
 
 # 僅分割，僅 JSON
 curl -X POST "http://localhost:8000/api/v1/analyze/287545?steps=segment&visualize=false"
 
-# 眼部偵測加視覺化
-curl -X POST "http://localhost:8000/api/v1/analyze/287545?steps=eyes"
+# 眼部偵測加視覺化，不使用深度
+curl -X POST "http://localhost:8000/api/v1/analyze/287545?steps=eyes&depth_pro=none"
 ```
+
+## 輸出範例
+
+![輸出範例 — 2 隻綿羊 (547383)](docs/examples/analyze_547383.jpg)
+
+標註影像呈現管線三層輸出的完整結果：
+
+- **彩色遮罩 + 輪廓**：實例分割結果（每隻動物分配不同顏色）
+- **眼部標記 (L/R)**：偵測到的左右眼關鍵點，以圓圈框標示
+- **實線**：Intra-animal 雙眼距離（同一隻動物的兩眼間距）
+- **白色虛線**：Inter-animal 距離（不同動物右眼之間的距離）
+
+#### 距離標籤解讀
+
+**Intra-animal 標籤**（實線上）：
+```
+48.9 px | 0.10m | ! sheep IOD
+```
+- `48.9 px` — 第一層：像素距離
+- `0.10m` — 第二/三層：Depth Pro 估算的度量距離（公尺）
+- `! sheep IOD` — 第三層合理性檢查結果
+
+**IOD** = Inter-Ocular Distance（雙眼間距）。每個物種有已知的生物學 IOD 範圍，用來驗證度量結果是否合理。
+
+**合理性檢查圖示**：
+- `v`（綠色）= **PASS** — 度量距離在預期 IOD 範圍內
+- `!`（黃色）= **WARNING** — 超出範圍但在 50% 容許範圍內
+- `x`（紅色）= **FAIL** — 明顯不合理，可能是眼部偵測或深度估計有誤
+
+**Inter-animal 標籤**（虛線上）：
+```
+#0-#1 R-eye: 175.6 px | 2.50m
+```
+- `#0-#1` — 動物配對 ID
+- `R-eye` — 以各動物的右眼為測量點
+- `175.6 px` — 像素距離
+- `2.50m` — 度量距離（無合理性檢查 — 動物間距離沒有生物學參考值）
 
 ## 測試影像
 

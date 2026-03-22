@@ -108,19 +108,73 @@ Swagger UI: `http://localhost:8000/docs`
 |-----------|--------|---------|-------------|
 | `steps` | `segment`, `eyes`, `full` | `full` | Pipeline depth |
 | `visualize` | `true`, `false` | `true` | Generate annotated image |
+| `depth_pro` | `none`, `fast`, `metric` | `metric` | Depth estimation mode |
+
+#### Depth Mode Details
+
+| Mode | Model | Output | Speed | Description |
+|------|-------|--------|-------|-------------|
+| `none` | — | Pixel distance only | Instant | No depth model, fastest option |
+| `fast` | Depth Anything V2 | Relative depth | ~2s | Perspective-corrected pixel distance |
+| `metric` | Apple Depth Pro | Metric depth (meters) | ~30-60s | True 3D distance + sanity check |
+
+> If Depth Pro is not installed and `metric` is selected, the system automatically falls back to `fast` mode and logs a warning.
 
 ### Examples
 
 ```bash
-# Full pipeline (3 layers + visualization)
+# Full pipeline with metric depth (default, ~30-60s)
 curl -X POST "http://localhost:8000/api/v1/analyze/287545"
+
+# Full pipeline, pixel distance only (fastest)
+curl -X POST "http://localhost:8000/api/v1/analyze/287545?depth_pro=none"
+
+# Full pipeline with fast depth (~2s)
+curl -X POST "http://localhost:8000/api/v1/analyze/287545?depth_pro=fast"
 
 # Segmentation only, JSON only
 curl -X POST "http://localhost:8000/api/v1/analyze/287545?steps=segment&visualize=false"
 
-# Eye detection with visualization
-curl -X POST "http://localhost:8000/api/v1/analyze/287545?steps=eyes"
+# Eye detection with visualization, no depth
+curl -X POST "http://localhost:8000/api/v1/analyze/287545?steps=eyes&depth_pro=none"
 ```
+
+## Example Output
+
+![Example output — 2 sheep (547383)](docs/examples/analyze_547383.jpg)
+
+The annotated image shows all three layers of the pipeline output:
+
+- **Colored masks + contours**: Instance segmentation results (each animal gets a unique color)
+- **Eye markers (L/R)**: Detected left/right eye keypoints with circle frames
+- **Solid lines**: Intra-animal binocular distance (between an animal's own eyes)
+- **Dashed white lines**: Inter-animal distance (between right eyes of different animals)
+
+#### Reading the Distance Labels
+
+**Intra-animal label** (on solid lines):
+```
+48.9 px | 0.10m | ! sheep IOD
+```
+- `48.9 px` — Layer 1: pixel distance
+- `0.10m` — Layer 2/3: metric distance estimated by Depth Pro (meters)
+- `! sheep IOD` — Layer 3 sanity check result against known biology
+
+**IOD** = Inter-Ocular Distance (the distance between an animal's two eyes). Each species has a known biological IOD range used to validate whether the metric measurement is reasonable.
+
+**Sanity check icons**:
+- `v` (green) = **PASS** — metric distance within expected IOD range
+- `!` (yellow) = **WARNING** — outside range but within 50% tolerance
+- `x` (red) = **FAIL** — clearly unreasonable, likely eye detection or depth error
+
+**Inter-animal label** (on dashed lines):
+```
+#0-#1 R-eye: 175.6 px | 2.50m
+```
+- `#0-#1` — animal pair IDs
+- `R-eye` — measured between each animal's right eye
+- `175.6 px` — pixel distance
+- `2.50m` — metric distance (no sanity check — no biological reference for inter-animal distance)
 
 ## Test Images
 

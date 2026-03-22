@@ -32,6 +32,12 @@ class PipelineSteps(str, Enum):
     full = "full"        # Segmentation + eyes + distance measurement
 
 
+class DepthMode(str, Enum):
+    none = "none"        # Pixel distance only, no depth model
+    fast = "fast"        # Depth Anything V2 (relative depth, ~2s)
+    metric = "metric"    # Depth Pro (metric depth in meters, ~30-60s)
+
+
 # ============================================================
 # COCO browsing
 # ============================================================
@@ -78,12 +84,18 @@ def _run_pipeline(
     image_height: int,
     steps: PipelineSteps,
     visualize: bool,
+    depth_pro: DepthMode = DepthMode.metric,
 ) -> dict:
     """Shared pipeline logic for both COCO and upload endpoints.
 
     Runs pipeline stages based on `steps` parameter:
       segment → eyes → full
     Each stage includes all previous stages.
+
+    depth_pro controls which depth model to use (if steps==full):
+      none   → pixel distances only
+      fast   → Depth Anything V2 (relative depth, ~2s)
+      metric → Depth Pro (metric depth in meters, ~30-60s)
     """
     from app.services.segmentation import get_segmentation_service
     from app.models.schemas import AnimalDetection, EyePair
@@ -121,20 +133,24 @@ def _run_pipeline(
     if steps == PipelineSteps.full:
         from app.services.measurement import measure_all
 
-        # Try depth estimation (optional, graceful fallback)
+        # Depth estimation based on depth mode
         depth_map = None
         focal_length = None
-        try:
-            from app.services.depth_estimation import get_depth_estimation_service
+        if depth_pro != DepthMode.none:
+            try:
+                from app.services.depth_estimation import get_depth_estimation_service
 
-            depth_svc = get_depth_estimation_service()
-            if depth_svc is not None and seg_result.raw_image is not None:
-                depth_result = depth_svc.estimate_depth(seg_result.raw_image)
-                depth_map = depth_result.depth_map
-                if depth_result.is_metric:
-                    focal_length = depth_result.focal_length_px
-        except Exception:
-            logger.warning("Depth estimation failed, continuing without it", exc_info=True)
+                depth_svc = get_depth_estimation_service()
+                if depth_svc is not None and seg_result.raw_image is not None:
+                    depth_result = depth_svc.estimate_depth(
+                        seg_result.raw_image,
+                        prefer_metric=(depth_pro == DepthMode.metric),
+                    )
+                    depth_map = depth_result.depth_map
+                    if depth_result.is_metric:
+                        focal_length = depth_result.focal_length_px
+            except Exception:
+                logger.warning("Depth estimation failed, continuing without it", exc_info=True)
 
         intra_distances, inter_distances = measure_all(
             animals,
@@ -223,6 +239,10 @@ async def analyze_image(
         default=True,
         description="Generate annotated image in outputs/",
     ),
+    depth_pro: DepthMode = Query(
+        default=DepthMode.metric,
+        description="Depth mode: none (pixel only), fast (DA V2 ~2s), metric (Depth Pro ~30-60s)",
+    ),
 ):
     """Run analysis pipeline on a COCO image.
 
@@ -230,6 +250,11 @@ async def analyze_image(
       - segment: animal contours + bounding boxes only
       - eyes: + eye keypoint coordinates
       - full: + inter-ocular and inter-animal distances
+
+    Control depth model with `depth_pro`:
+      - none: pixel distances only (fastest)
+      - fast: Depth Anything V2 relative depth (~2s)
+      - metric: Depth Pro metric depth in meters (~30-60s)
 
     Control output with `visualize`:
       - true: also save annotated image to /outputs/analyze_{image_id}.jpg
@@ -252,6 +277,7 @@ async def analyze_image(
             image_height=img_info["height"],
             steps=steps,
             visualize=visualize,
+            depth_pro=depth_pro,
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -271,11 +297,15 @@ async def analyze_uploaded_image(
         default=True,
         description="Generate annotated image in outputs/",
     ),
+    depth_pro: DepthMode = Query(
+        default=DepthMode.metric,
+        description="Depth mode: none (pixel only), fast (DA V2 ~2s), metric (Depth Pro ~30-60s)",
+    ),
 ):
     """Run analysis pipeline on an uploaded image.
 
     Accepts JPG/PNG. No COCO dataset required.
-    Same `steps` and `visualize` parameters as the COCO endpoint.
+    Same `steps`, `visualize`, and `depth_pro` parameters as the COCO endpoint.
     """
     if file.content_type not in ("image/jpeg", "image/png"):
         raise HTTPException(
@@ -307,6 +337,7 @@ async def analyze_uploaded_image(
             image_height=h,
             steps=steps,
             visualize=visualize,
+            depth_pro=depth_pro,
         )
     except HTTPException:
         raise
