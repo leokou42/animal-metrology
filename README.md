@@ -172,7 +172,7 @@ The annotated image shows all three layers of the pipeline output:
 48.9 px | corr: 52.3 px | 0.10m | ! sheep IOD
 ```
 - `48.9 px` — Layer 1: pixel distance
-- `corr: 52.3 px` — Layer 2: depth-corrected pixel distance (perspective-compensated)
+- `corr: 49.0 px` — Layer 2: depth-corrected pixel distance (perspective-compensated)
 - `0.10m` — Layer 3: metric distance estimated by Depth Pro (meters)
 - `! sheep IOD` — Sanity check result against known biology
 
@@ -190,15 +190,15 @@ The annotated image shows all three layers of the pipeline output:
 #0-#1 R-eye: 175.6 px
 
 # depth_pro=fast
-#0-#1 R-eye: 170.5 px | corr: 184.7 px
+#0-#1 R-eye: 175.6 px | corr: 201.9 px
 
 # depth_pro=metric
-#0-#1 R-eye: 175.6 px | corr: 184.7 px | 2.50m
+#0-#1 R-eye: 175.6 px | corr: 201.9 px | 2.50m
 ```
 - `#0-#1` — animal pair IDs
 - `R-eye` — measured between each animal's right eye
 - `175.6 px` — pixel distance
-- `corr: 184.7 px` — depth-corrected pixel distance
+- `corr: 201.9 px` — depth-corrected pixel distance
 - `2.50m` — metric distance (no sanity check — no biological reference for inter-animal distance)
 
 ## Test Images

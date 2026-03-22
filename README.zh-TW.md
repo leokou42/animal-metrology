@@ -166,13 +166,13 @@ curl -X POST "http://localhost:8000/api/v1/analyze/upload" \
 48.9 px
 
 # depth_pro=fast（DA V2）
-48.9 px | corr: 52.3 px
+48.9 px | corr: 49.0 px
 
 # depth_pro=metric（Depth Pro）— 包含所有層
-48.9 px | corr: 52.3 px | 0.10m | ! sheep IOD
+48.9 px | corr: 49.0 px | 0.10m | ! sheep IOD
 ```
 - `48.9 px` — 第一層：像素距離
-- `corr: 52.3 px` — 第二層：深度修正後的像素距離（已補償透視壓縮）
+- `corr: 49.0 px` — 第二層：深度修正後的像素距離（已補償透視壓縮）
 - `0.10m` — 第三層：Depth Pro 估算的度量距離（公尺）
 - `! sheep IOD` — 合理性檢查結果
 
@@ -190,15 +190,15 @@ curl -X POST "http://localhost:8000/api/v1/analyze/upload" \
 #0-#1 R-eye: 175.6 px
 
 # depth_pro=fast
-#0-#1 R-eye: 170.5 px | corr: 184.7 px
+#0-#1 R-eye: 170.5 px | corr: 201.9 px
 
 # depth_pro=metric
-#0-#1 R-eye: 175.6 px | corr: 184.7 px | 2.50m
+#0-#1 R-eye: 175.6 px | corr: 201.9 px | 2.50m
 ```
 - `#0-#1` — 動物配對 ID
 - `R-eye` — 以各動物的右眼為測量點
 - `175.6 px` — 像素距離
-- `corr: 184.7 px` — 深度修正後的像素距離
+- `corr: 201.9 px` — 深度修正後的像素距離
 - `2.50m` — 度量距離（無合理性檢查 — 動物間距離沒有生物學參考值）
 
 ## 測試影像
