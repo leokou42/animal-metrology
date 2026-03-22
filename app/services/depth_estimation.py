@@ -43,11 +43,51 @@ class DepthResult:
     is_metric: bool
 
 
+def _resolve_torch_device():
+    """Resolve the runtime device for depth models from settings."""
+    import torch
+
+    requested = settings.depth_device.strip().lower()
+
+    if requested == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if requested == "cpu":
+        return torch.device("cpu")
+
+    if requested.startswith("cuda"):
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                f"DEPTH_DEVICE={settings.depth_device!r} requested CUDA, "
+                "but torch.cuda.is_available() is False."
+            )
+
+        device = torch.device(requested)
+        if device.index is not None and device.index >= torch.cuda.device_count():
+            raise RuntimeError(
+                f"DEPTH_DEVICE={settings.depth_device!r} requested unavailable GPU "
+                f"index {device.index}. Available CUDA devices: {torch.cuda.device_count()}."
+            )
+        return device
+
+    raise ValueError(
+        f"Unsupported DEPTH_DEVICE={settings.depth_device!r}. "
+        "Use one of: auto, cpu, cuda, cuda:N."
+    )
+
+
+def _resolve_transformers_device(torch_device) -> int:
+    """Translate a torch device to the Hugging Face pipeline device format."""
+    if torch_device.type == "cuda":
+        return torch_device.index if torch_device.index is not None else 0
+    return -1
+
+
 def _try_load_depth_pro() -> object | None:
     """Try to load Apple Depth Pro. Returns (model, transform) or None."""
+    device = _resolve_torch_device()
     try:
         import depth_pro
-        import torch
         from depth_pro.depth_pro import DepthProConfig, DEFAULT_MONODEPTH_CONFIG_DICT
 
         checkpoint = settings.depth_pro_checkpoint
@@ -61,11 +101,11 @@ def _try_load_depth_pro() -> object | None:
         )
 
         model, transform = depth_pro.create_model_and_transforms(
-            config=config, device=torch.device("cpu")
+            config=config, device=device
         )
         model.eval()
-        logger.info("Loaded Apple Depth Pro (metric depth)")
-        return model, transform
+        logger.info("Loaded Apple Depth Pro (metric depth) on %s", device)
+        return model, transform, device
     except Exception as e:
         logger.info("Depth Pro not available (%s), trying fallback", e)
         return None
@@ -73,15 +113,16 @@ def _try_load_depth_pro() -> object | None:
 
 def _try_load_da_v2() -> object | None:
     """Try to load Depth Anything V2. Returns pipeline or None."""
+    device = _resolve_torch_device()
     try:
         from transformers import pipeline as hf_pipeline
 
         pipe = hf_pipeline(
             "depth-estimation",
             model=settings.depth_model,
-            device="cpu",
+            device=_resolve_transformers_device(device),
         )
-        logger.info("Loaded Depth Anything V2 (relative depth)")
+        logger.info("Loaded Depth Anything V2 (relative depth) on %s", device)
         return pipe
     except Exception as e:
         logger.info("Depth Anything V2 not available (%s)", e)
@@ -159,7 +200,7 @@ class DepthEstimationService:
         from PIL import Image as PILImage
         import tempfile
 
-        model, transform = self._depth_pro
+        model, transform, device = self._depth_pro
         h, w = image.shape[:2]
 
         # Depth Pro's load_rgb expects a file path, so save temporarily
@@ -169,7 +210,9 @@ class DepthEstimationService:
             pil_img.save(tmp.name)
             img_tensor, _, f_px = depth_pro.load_rgb(tmp.name)
 
-        img_tensor = transform(img_tensor)
+        img_tensor = transform(img_tensor).to(device)
+        if isinstance(f_px, torch.Tensor):
+            f_px = f_px.to(device)
 
         with torch.no_grad():
             prediction = model.infer(img_tensor, f_px=f_px)
