@@ -1,9 +1,12 @@
 """Tests for API endpoints and COCO filtering logic."""
 
+from datetime import datetime, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.routers.analyze import _build_upload_id
 from app.utils.version import APP_VERSION
 
 
@@ -37,6 +40,10 @@ class TestCOCOFilter:
 
 
 class TestAnalyze:
+    def test_build_upload_id_uses_taiwan_time(self):
+        utc_time = datetime(2026, 3, 21, 16, 5, 6, tzinfo=timezone.utc)
+        assert _build_upload_id(utc_time) == "upload_20260322_000506"
+
     def test_analyze_nonexistent_image_returns_404(self):
         """Non-existent image_id should return 404."""
         resp = client.post("/api/v1/analyze/99999999")

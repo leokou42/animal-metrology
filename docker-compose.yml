@@ -2,7 +2,10 @@ version: "3.8"
 
 services:
   api:
-    build: .
+    build:
+      context: .
+      args:
+        INSTALL_DEPTH_PRO: ${INSTALL_DEPTH_PRO:-false}
     container_name: animal-eye-metrology
     ports:
       - "8000:8000"

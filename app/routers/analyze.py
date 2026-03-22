@@ -12,6 +12,7 @@ Query parameters:
 
 import logging
 import tempfile
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from app.services.coco_filter import get_coco_filter_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["analysis"])
+TAIWAN_TIMEZONE = timezone(timedelta(hours=8), name="Asia/Taipei")
 
 
 class PipelineSteps(str, Enum):
@@ -36,6 +38,15 @@ class DepthMode(str, Enum):
     none = "none"        # Pixel distance only, no depth model
     fast = "fast"        # Depth Anything V2 (relative depth, ~2s)
     metric = "metric"    # Depth Pro (metric depth in meters, ~30-60s)
+
+
+def _build_upload_id(now: datetime | None = None) -> str:
+    """Create a filename-safe upload id in Taiwan local time."""
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    timestamp = current.astimezone(TAIWAN_TIMEZONE).strftime("%Y%m%d_%H%M%S")
+    return f"upload_{timestamp}"
 
 
 # ============================================================
@@ -287,10 +298,7 @@ async def analyze_uploaded_image(
             raise ValueError(f"Failed to read uploaded image: {file.filename}")
         h, w = img.shape[:2]
 
-        from datetime import datetime
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        upload_id = f"upload_{timestamp}"
+        upload_id = _build_upload_id()
 
         return _run_pipeline(
             image_path=tmp_path,
