@@ -1,3 +1,5 @@
+**English** | [中文](README.zh-TW.md)
+
 # Animal Eye Metrology
 
 Image segmentation + metrology pipeline that detects animals in images, locates their eyes, and measures inter-ocular and inter-animal eye distances with three layers of precision.
@@ -11,23 +13,32 @@ Image segmentation + metrology pipeline that detects animals in images, locates 
 | API Framework | FastAPI | REST API with Swagger UI |
 | Instance Segmentation | YOLO11n-seg (ultralytics) | Detect animal contours + bounding boxes |
 | Eye Keypoint Detection | RTMPose-m + AP-10K (rtmlib/ONNX) | Locate left/right eye keypoints |
-| Metric Depth Estimation | Apple Depth Pro (primary) / DA V2 (fallback) | Per-pixel depth in meters + focal length |
+| Relative Depth Estimation | Depth Anything V2 (DA V2) | Per-pixel relative depth for perspective correction |
+| Metric Depth Estimation | Apple Depth Pro | Per-pixel metric depth (meters) + focal length |
 | Visualization | OpenCV | Annotated result images |
 | Containerization | Docker + docker-compose | One-command deployment |
 
 ## Three-Layer Measurement Architecture
 
-### Layer 1: 2D Pixel Distance
+### Layer 1: Pixel Distance
 
-Basic Euclidean distance in image pixel space.
+Straight-line Euclidean distance between two eye coordinates on the 2D image plane — like measuring two points on screen with a ruler. No depth, no camera model, pure planar geometry.
 
 - **Formula**: `d = sqrt((x2-x1)^2 + (y2-y1)^2)`
 - **Unit**: pixels
-- **Limitation**: No physical meaning — closer animals appear larger.
+- **Limitation**: No physical meaning — distant animals appear smaller, compressing pixel distances.
 
-### Layer 2: Metric Distance via Depth Pro
+### Layer 2: Depth-Corrected Distance
 
-Uses Apple Depth Pro (ICLR 2025) to estimate metric depth (meters) and focal length, then projects pixel coordinates to 3D camera space:
+Still a pixel distance, but corrected for perspective using Depth Anything V2's relative depth map. Solves the problem that distant animals look smaller in the image, compressing their pixel distances. This layer compensates for that compression.
+
+- **Unit**: pixels (perspective-corrected)
+- **Advantage**: Proportional relationships are closer to reality than Layer 1
+- **Note**: Relative depth only — no absolute scale, so still not a physical measurement
+
+### Layer 3: Metric Distance
+
+Uses Apple Depth Pro (ICLR 2025) to get metric depth (meters) and estimated focal length, then projects 2D pixel coordinates into 3D space via the pinhole camera model:
 
 ```
 X = (x_pixel - cx) * Z / focal_length
@@ -36,10 +47,10 @@ d = sqrt((X2-X1)^2 + (Y2-Y1)^2 + (Z2-Z1)^2)
 ```
 
 - **Unit**: meters
-- **Advantage**: True 3D distance without camera calibration
+- **Advantage**: The only layer with true physical meaning — real-world 3D Euclidean distance without camera calibration
 - **Note**: Metric depth has estimation error — not lab-grade precision
 
-### Layer 3: Sanity Check
+#### Sanity Check
 
 Cross-validates metric IOD against known biological ranges:
 
@@ -132,11 +143,16 @@ curl -X POST "http://localhost:8000/api/v1/analyze/287545?steps=eyes"
 - **Evaluation**: OKS (Object Keypoint Similarity) measures keypoint accuracy
 - **Delivery**: ONNX format via rtmlib — avoids heavy mmpose/mmcv dependency
 
+### Depth Anything V2
+- **Why**: High-quality relative depth maps for perspective correction (Layer 2)
+- **Advantage**: Lightweight, fast, no focal length needed — only relative ordering matters
+- **Design**: Used in Layer 2 to compensate for perspective compression in pixel distances
+
 ### Apple Depth Pro
 - **Why**: Outputs metric depth (meters) + estimated focal length — no camera calibration needed
 - **Paper**: "Depth Pro: Sharp Monocular Metric Depth in Less Than a Second" (ICLR 2025)
 - **Evaluation**: AbsRel, RMSE on standard benchmarks (NYU, KITTI)
-- **Design**: Optional — pipeline gracefully falls back to pixel-only if unavailable
+- **Design**: Powers Layer 3 (metric distance); optional — pipeline gracefully falls back to pixel-only if unavailable
 
 ## Verification Methods
 
