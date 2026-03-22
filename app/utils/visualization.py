@@ -69,15 +69,24 @@ def draw_text_with_bg(
     """Draw text with a filled background rectangle for readability.
 
     在文字後面畫一個黑色矩形，確保不管底色是什麼都看得清楚。
-    origin 是文字左下角的座標。
+    origin 是文字左下角的座標。座標會自動 clamp 到圖片範圍內。
     """
+    img_h, img_w = image.shape[:2]
     (text_w, text_h), baseline = cv2.getTextSize(text, FONT, font_scale, thickness)
     x, y = origin
+
+    pad = 2
+    # Clamp x: keep text + padding within image width
+    x = max(pad, min(x, img_w - text_w - pad))
+    # Clamp y: keep text + padding within image height
+    # text_h + 4 is the space above origin; baseline + 2 is below
+    y = max(text_h + pad + 2, min(y, img_h - baseline - pad))
+
     # Background rectangle (slightly padded)
     cv2.rectangle(
         image,
-        (x - 2, y - text_h - 4),
-        (x + text_w + 2, y + baseline + 2),
+        (x - pad, y - text_h - 4),
+        (x + text_w + pad, y + baseline + 2),
         BG_COLOR,
         cv2.FILLED,
     )
@@ -168,7 +177,9 @@ def draw_eyes(
             if point is None:
                 continue
 
-            x, y = int(point[0]), int(point[1])
+            img_h, img_w = image.shape[:2]
+            x = max(10, min(int(point[0]), img_w - 11))
+            y = max(10, min(int(point[1]), img_h - 11))
 
             # Outer circle frame (marks the eye region)
             cv2.circle(image, (x, y), 10, color, thickness=2)

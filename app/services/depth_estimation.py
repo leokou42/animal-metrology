@@ -105,34 +105,50 @@ class DepthEstimationService:
         if result is not None:
             self._depth_pro = result  # (model, transform)
             self._backend = "depth_pro"
-            return
+        else:
+            logger.warning(
+                "Depth Pro not available — install with: "
+                "pip install depth-pro. Falling back to DA V2 (fast mode)."
+            )
 
-        # Fallback to Depth Anything V2
+        # Also try DA V2 (used when depth_pro=fast, or as fallback)
         result = _try_load_da_v2()
         if result is not None:
             self._da_v2 = result
-            self._backend = "da_v2"
-            return
+            if self._backend is None:
+                self._backend = "da_v2"
 
-        raise RuntimeError("No depth estimation model available")
+        if self._backend is None:
+            raise RuntimeError("No depth estimation model available")
 
     @property
     def backend_name(self) -> str:
         return self._backend or "none"
 
-    def estimate_depth(self, image: np.ndarray) -> DepthResult:
+    def estimate_depth(
+        self, image: np.ndarray, prefer_metric: bool = True,
+    ) -> DepthResult:
         """Estimate depth from a BGR image.
 
         Args:
             image: BGR numpy array (H, W, 3)
+            prefer_metric: If True, use Depth Pro (metric, slow).
+                           If False, use DA V2 even if Depth Pro is available.
 
         Returns:
             DepthResult with depth_map, optional focal_length, and is_metric flag
         """
-        if self._backend == "depth_pro":
-            return self._run_depth_pro(image)
-        elif self._backend == "da_v2":
+        # If caller wants fast mode and DA V2 is available, use it
+        if not prefer_metric and self._da_v2 is not None:
             return self._run_da_v2(image)
+
+        # Otherwise use the best available backend
+        if self._backend == "depth_pro" and prefer_metric:
+            return self._run_depth_pro(image)
+        elif self._backend == "da_v2" or self._da_v2 is not None:
+            return self._run_da_v2(image)
+        elif self._backend == "depth_pro":
+            return self._run_depth_pro(image)
         else:
             raise RuntimeError("No depth backend loaded")
 
@@ -213,8 +229,14 @@ _depth_service: DepthEstimationService | None = None
 _depth_init_attempted: bool = False
 
 
-def get_depth_estimation_service() -> DepthEstimationService | None:
+def get_depth_estimation_service(
+    prefer_metric: bool = True,
+) -> DepthEstimationService | None:
     """Get or create the DepthEstimationService singleton.
+
+    Args:
+        prefer_metric: Passed through to estimate_depth() calls.
+            Not used here — the singleton loads all available backends.
 
     Returns None if depth estimation is disabled or no model available.
     """
