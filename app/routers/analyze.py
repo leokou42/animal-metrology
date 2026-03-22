@@ -262,6 +262,12 @@ async def analyze_uploaded_image(
         suffix = ".jpg" if "jpeg" in file.content_type else ".png"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             content = await file.read()
+            max_size = 20 * 1024 * 1024  # 20 MB
+            if len(content) > max_size:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File too large ({len(content) // 1024 // 1024} MB). Maximum is 20 MB.",
+                )
             tmp.write(content)
             tmp_path = tmp.name
 

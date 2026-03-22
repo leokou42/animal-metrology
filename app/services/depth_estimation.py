@@ -305,9 +305,10 @@ def get_depth_estimation_service(
 
     try:
         _depth_service = DepthEstimationService()
-        _depth_init_attempted = True  # Only mark after success
     except Exception:
-        logger.warning("Depth estimation unavailable, will retry next call", exc_info=True)
+        logger.warning("Depth estimation unavailable", exc_info=True)
         _depth_service = None
+    finally:
+        _depth_init_attempted = True
 
     return _depth_service

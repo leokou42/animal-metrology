@@ -126,8 +126,8 @@ class SegmentationService:
                            用來合併重疊的 bounding box
         """
         self.model_name = model_name or settings.segmentation_model
-        self.confidence = confidence or settings.confidence_threshold
-        self.iou_threshold = iou_threshold or settings.iou_threshold
+        self.confidence = confidence if confidence is not None else settings.confidence_threshold
+        self.iou_threshold = iou_threshold if iou_threshold is not None else settings.iou_threshold
 
         logger.info("Loading YOLO model: %s", self.model_name)
         # Lazy import — only loaded when service is actually instantiated

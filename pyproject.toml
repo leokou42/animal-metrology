@@ -15,8 +15,6 @@ dependencies = [
     "Pillow>=10.0.0",
     "pydantic==2.9.0",
     "pydantic-settings==2.5.0",
-    "pandas==2.2.0",
-    "matplotlib==3.9.0",
     # Eye detection (RTMPose + AP-10K via ONNX)
     "rtmlib>=0.0.15",
     "onnxruntime>=1.15.0",
