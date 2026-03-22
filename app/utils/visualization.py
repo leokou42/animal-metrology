@@ -236,15 +236,18 @@ def draw_distances(
 
             cv2.line(image, pt1, pt2, color, thickness=2)
 
-            # Build label with available depth info:
-            #   pixel only:    "64.8 px"
-            #   fast (DA V2):  "64.8 px | corr: 72.3 px"
-            #   metric:        "64.8 px | 0.19m | v cat IOD"
+            # Build cumulative label with all available layers:
+            #   none:   "64.8 px"
+            #   fast:   "64.8 px | corr: 72.3 px"
+            #   metric: "64.8 px | corr: 72.3 px | 0.19m | v cat IOD"
             label = f"{d['distance_px']:.1f} px"
             label_color = color
 
             corrected_px = d.get("depth_corrected_px")
             metric_m = d.get("metric_distance_m")
+
+            if corrected_px is not None:
+                label += f" | corr: {corrected_px:.1f} px"
 
             if metric_m is not None:
                 label += f" | {metric_m:.2f}m"
@@ -255,8 +258,6 @@ def draw_distances(
                     icon = SANITY_ICONS[check]
                     label += f" | {icon} {category} IOD"
                     label_color = SANITY_COLORS.get(check, color)
-            elif corrected_px is not None:
-                label += f" | corr: {corrected_px:.1f} px"
 
             # Place label below the eye line, offset perpendicular to avoid
             # covering the bounding box / eye markers
@@ -278,10 +279,10 @@ def draw_distances(
             label_text = f"{d['distance_px']:.1f} px"
             corrected_px = d.get("depth_corrected_px")
             metric_m = d.get("metric_distance_m")
+            if corrected_px is not None:
+                label_text += f" | corr: {corrected_px:.1f} px"
             if metric_m is not None:
                 label_text += f" | {metric_m:.2f}m"
-            elif corrected_px is not None:
-                label_text += f" | corr: {corrected_px:.1f} px"
 
             pair_label = f"#{d['animal_a_id']}-#{d['animal_b_id']} R-eye: {label_text}"
             label_x, label_y = _offset_label(pt1, pt2, offset_px=25)
