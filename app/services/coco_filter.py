@@ -138,7 +138,13 @@ class COCOFilterService:
             imgIds=image_id, catIds=animal_cat_ids, iscrowd=False
         )
         anns = self.coco.loadAnns(ann_ids)
-        img_info = self.coco.loadImgs(image_id)[0]
+        try:
+            imgs = self.coco.loadImgs(image_id)
+        except KeyError:
+            imgs = []
+        if not imgs:
+            raise FileNotFoundError(f"Image {image_id} not found in COCO annotations")
+        img_info = imgs[0]
 
         return {
             "image_info": img_info,

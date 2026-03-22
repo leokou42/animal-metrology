@@ -20,6 +20,7 @@ continues with pixel-only distances.
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -179,19 +180,24 @@ class DepthEstimationService:
         Returns:
             DepthResult with depth_map, optional focal_length, and is_metric flag
         """
-        # If caller wants fast mode and DA V2 is available, use it
-        if not prefer_metric and self._da_v2 is not None:
-            return self._run_da_v2(image)
+        if not prefer_metric:
+            # Fast mode: DA V2 only
+            if self._da_v2 is not None:
+                return self._run_da_v2(image)
+            # DA V2 not available — fall back to Depth Pro with warning
+            if self._backend == "depth_pro":
+                logger.warning(
+                    "DA V2 not available for fast mode, falling back to Depth Pro (slower)"
+                )
+                return self._run_depth_pro(image)
+            raise RuntimeError("No fast depth backend available (DA V2 not installed)")
 
-        # Otherwise use the best available backend
-        if self._backend == "depth_pro" and prefer_metric:
+        # Metric mode: prefer Depth Pro, fall back to DA V2
+        if self._backend == "depth_pro":
             return self._run_depth_pro(image)
-        elif self._backend == "da_v2" or self._da_v2 is not None:
+        if self._da_v2 is not None:
             return self._run_da_v2(image)
-        elif self._backend == "depth_pro":
-            return self._run_depth_pro(image)
-        else:
-            raise RuntimeError("No depth backend loaded")
+        raise RuntimeError("No depth backend loaded")
 
     def _run_depth_pro(self, image: np.ndarray) -> DepthResult:
         """Run Apple Depth Pro inference."""
@@ -206,9 +212,15 @@ class DepthEstimationService:
         # Depth Pro's load_rgb expects a file path, so save temporarily
         rgb = image[:, :, ::-1]
         pil_img = PILImage.fromarray(rgb)
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-            pil_img.save(tmp.name)
-            img_tensor, _, f_px = depth_pro.load_rgb(tmp.name)
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                tmp_path = tmp.name
+                pil_img.save(tmp_path)
+            img_tensor, _, f_px = depth_pro.load_rgb(tmp_path)
+        finally:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
 
         img_tensor = transform(img_tensor).to(device)
         if isinstance(f_px, torch.Tensor):
@@ -291,11 +303,11 @@ def get_depth_estimation_service(
     if _depth_init_attempted:
         return _depth_service
 
-    _depth_init_attempted = True
     try:
         _depth_service = DepthEstimationService()
+        _depth_init_attempted = True  # Only mark after success
     except Exception:
-        logger.warning("Depth estimation unavailable", exc_info=True)
+        logger.warning("Depth estimation unavailable, will retry next call", exc_info=True)
         _depth_service = None
 
     return _depth_service

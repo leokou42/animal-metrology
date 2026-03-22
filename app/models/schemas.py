@@ -57,7 +57,7 @@ class InterAnimalDistance(BaseModel):
 
 
 class MeasurementResult(BaseModel):
-    image_id: int
+    image_id: int | str
     image_file: str
     image_width: int
     image_height: int

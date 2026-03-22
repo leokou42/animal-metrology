@@ -4,7 +4,7 @@ WORKDIR /app
 
 # System deps for OpenCV headless + pycocotools
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ libglib2.0-0 libsm6 libxrender1 libxext6 \
+    gcc g++ libglib2.0-0 libsm6 libxrender1 libxext6 libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

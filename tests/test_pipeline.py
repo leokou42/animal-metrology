@@ -40,14 +40,14 @@ class TestAnalyze:
     def test_analyze_nonexistent_image_returns_404(self):
         """Non-existent image_id should return 404."""
         resp = client.post("/api/v1/analyze/99999999")
-        assert resp.status_code in (404, 500)
+        assert resp.status_code == 404
         data = resp.json()
         assert "detail" in data
 
     def test_analyze_accepts_steps_param(self):
         """Verify steps query parameter is accepted (even if image not found)."""
         resp = client.post("/api/v1/analyze/99999999?steps=segment&visualize=false")
-        assert resp.status_code in (404, 500)
+        assert resp.status_code == 404
         data = resp.json()
         assert "detail" in data
 

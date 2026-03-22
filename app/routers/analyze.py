@@ -78,7 +78,7 @@ async def list_multi_animal_images(
 
 def _run_pipeline(
     image_path: str,
-    image_id: int,
+    image_id: int | str,
     image_file: str,
     image_width: int,
     image_height: int,
@@ -271,11 +271,14 @@ async def analyze_uploaded_image(
             raise ValueError(f"Failed to read uploaded image: {file.filename}")
         h, w = img.shape[:2]
 
-        stem = Path(file.filename).stem if file.filename else "uploaded"
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        upload_id = f"upload_{timestamp}"
 
         return _run_pipeline(
             image_path=tmp_path,
-            image_id=hash(stem) % 10**8,
+            image_id=upload_id,
             image_file=file.filename or "uploaded.jpg",
             image_width=w,
             image_height=h,
