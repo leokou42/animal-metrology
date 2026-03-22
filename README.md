@@ -86,8 +86,12 @@ python -m app.main            # Start API server
 ### Docker
 
 ```bash
-docker compose up --build
+cp .env.example .env
+docker compose build --no-cache
+docker compose up -d
 ```
+
+> `.env.example` has `INSTALL_DEPTH_PRO=true` by default, which installs Apple Depth Pro and downloads the model (~1.8GB) during build. The entrypoint script automatically copies the model weights to the mounted `./weights/` volume on first start. Set `INSTALL_DEPTH_PRO=false` in `.env` to skip installation (Layer 1 & 2 only).
 
 API available at `http://localhost:8000`
 

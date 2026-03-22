@@ -86,8 +86,12 @@ python -m app.main            # 啟動 API 伺服器
 ### Docker
 
 ```bash
-docker compose up --build
+cp .env.example .env
+docker compose build --no-cache
+docker compose up -d
 ```
+
+> `.env.example` 預設 `INSTALL_DEPTH_PRO=true`，build 時會安裝 Apple Depth Pro 並下載模型（約 1.8GB）。entrypoint 腳本會在首次啟動時自動將模型權重複製到掛載的 `./weights/` 目錄。如不需要可在 `.env` 中設為 `INSTALL_DEPTH_PRO=false`（僅使用第一、二層）。
 
 API 位於 `http://localhost:8000`
 
