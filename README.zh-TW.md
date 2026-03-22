@@ -114,24 +114,25 @@ Swagger UI：`http://localhost:8000/docs`
 
 #### 深度模式說明
 
-| 模式 | 模型 | 輸出 | 速度 | 說明 |
-|------|------|------|------|------|
-| `none` | — | 僅像素距離 | 即時 | 不使用深度模型，最快 |
-| `fast` | Depth Anything V2 | 相對深度 | ~2 秒 | 透視修正的像素距離 |
-| `metric` | Apple Depth Pro | 度量深度（公尺） | ~30-60 秒 | 真實 3D 距離 + 合理性檢查 |
+| 模式 | 模型 | 輸出（累計） | 速度 |
+|------|------|-------------|------|
+| `none` | — | `pixel_distance` | 即時 |
+| `fast` | Depth Anything V2 | + `depth_corrected_px` | ~2 秒 |
+| `metric` | Apple Depth Pro | + `metric_distance_m` + 合理性檢查 | ~30-60 秒 |
 
+> 每個模式包含前一模式的所有欄位。`metric` 回傳完整三層結果。
 > 若未安裝 Depth Pro 但選擇了 `metric`，系統會自動降級為 `fast` 模式並記錄警告。
 
 ### 範例
 
 ```bash
-# 完整管線，度量深度（預設，約 30-60 秒）
+# 完整管線，三層距離（預設，約 30-60 秒）
 curl -X POST "http://localhost:8000/api/v1/analyze/287545"
 
 # 完整管線，僅像素距離（最快）
 curl -X POST "http://localhost:8000/api/v1/analyze/287545?depth_pro=none"
 
-# 完整管線，快速深度（約 2 秒）
+# 完整管線，深度修正像素距離（約 2 秒）
 curl -X POST "http://localhost:8000/api/v1/analyze/287545?depth_pro=fast"
 
 # 僅分割，僅 JSON
@@ -139,6 +140,10 @@ curl -X POST "http://localhost:8000/api/v1/analyze/287545?steps=segment&visualiz
 
 # 眼部偵測加視覺化，不使用深度
 curl -X POST "http://localhost:8000/api/v1/analyze/287545?steps=eyes&depth_pro=none"
+
+# 上傳圖片（不需要 COCO 資料集）
+curl -X POST "http://localhost:8000/api/v1/analyze/upload" \
+  -F "file=@my_photo.jpg" -G -d "depth_pro=fast"
 ```
 
 ## 輸出範例
@@ -154,22 +159,22 @@ curl -X POST "http://localhost:8000/api/v1/analyze/287545?steps=eyes&depth_pro=n
 
 #### 距離標籤解讀
 
-**Intra-animal 標籤**（實線上）：
+**Intra-animal 標籤**（實線上）— 依深度模式累計顯示：
 
-使用度量深度（Depth Pro）：
 ```
-48.9 px | 0.10m | ! sheep IOD
-```
-- `48.9 px` — 第一層：像素距離
-- `0.10m` — 第三層：Depth Pro 估算的度量距離（公尺）
-- `! sheep IOD` — 合理性檢查結果
+# depth_pro=none
+48.9 px
 
-使用快速深度（DA V2）：
-```
+# depth_pro=fast（DA V2）
 48.9 px | corr: 52.3 px
+
+# depth_pro=metric（Depth Pro）— 包含所有層
+48.9 px | corr: 52.3 px | 0.10m | ! sheep IOD
 ```
 - `48.9 px` — 第一層：像素距離
 - `corr: 52.3 px` — 第二層：深度修正後的像素距離（已補償透視壓縮）
+- `0.10m` — 第三層：Depth Pro 估算的度量距離（公尺）
+- `! sheep IOD` — 合理性檢查結果
 
 **IOD** = Inter-Ocular Distance（雙眼間距）。每個物種有已知的生物學 IOD 範圍，用來驗證度量結果是否合理。
 
@@ -178,21 +183,23 @@ curl -X POST "http://localhost:8000/api/v1/analyze/287545?steps=eyes&depth_pro=n
 - `!`（黃色）= **WARNING** — 超出範圍但在 50% 容許範圍內
 - `x`（紅色）= **FAIL** — 明顯不合理，可能是眼部偵測或深度估計有誤
 
-**Inter-animal 標籤**（虛線上）：
+**Inter-animal 標籤**（虛線上）— 依深度模式累計顯示：
 
-使用度量深度：
 ```
-#0-#1 R-eye: 175.6 px | 2.50m
-```
+# depth_pro=none
+#0-#1 R-eye: 175.6 px
 
-使用快速深度：
-```
+# depth_pro=fast
 #0-#1 R-eye: 170.5 px | corr: 184.7 px
+
+# depth_pro=metric
+#0-#1 R-eye: 175.6 px | corr: 184.7 px | 2.50m
 ```
 - `#0-#1` — 動物配對 ID
 - `R-eye` — 以各動物的右眼為測量點
 - `175.6 px` — 像素距離
-- `2.50m` 或 `corr: 184.7 px` — 度量距離或深度修正距離（無合理性檢查 — 動物間距離沒有生物學參考值）
+- `corr: 184.7 px` — 深度修正後的像素距離
+- `2.50m` — 度量距離（無合理性檢查 — 動物間距離沒有生物學參考值）
 
 ## 測試影像
 
@@ -269,8 +276,7 @@ animal-metrology/
 │   ├── test_annotations/           # 精簡版 COCO 標註 JSON
 │   └── sample_results.csv          # 管線輸出 CSV
 ├── scripts/
-│   ├── run_demo.py                 # 一鍵展示
-│   └── generate_architecture.py    # 架構圖產生器
+│   └── run_demo.py                 # 一鍵展示
 ├── docs/architecture.png
 ├── Dockerfile, docker-compose.yml
 ├── requirements.txt, .env.example

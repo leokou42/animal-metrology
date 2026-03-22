@@ -114,24 +114,25 @@ Swagger UI: `http://localhost:8000/docs`
 
 #### Depth Mode Details
 
-| Mode | Model | Output | Speed | Description |
-|------|-------|--------|-------|-------------|
-| `none` | — | Pixel distance only | Instant | No depth model, fastest option |
-| `fast` | Depth Anything V2 | Relative depth | ~2s | Perspective-corrected pixel distance |
-| `metric` | Apple Depth Pro | Metric depth (meters) | ~30-60s | True 3D distance + sanity check |
+| Mode | Model | Output (cumulative) | Speed |
+|------|-------|---------------------|-------|
+| `none` | — | `pixel_distance` | Instant |
+| `fast` | Depth Anything V2 | + `depth_corrected_px` | ~2s |
+| `metric` | Apple Depth Pro | + `metric_distance_m` + sanity check | ~30-60s |
 
+> Each mode includes all fields from the previous mode. `metric` returns all three layers.
 > If Depth Pro is not installed and `metric` is selected, the system automatically falls back to `fast` mode and logs a warning.
 
 ### Examples
 
 ```bash
-# Full pipeline with metric depth (default, ~30-60s)
+# Full pipeline with all 3 layers (default, ~30-60s)
 curl -X POST "http://localhost:8000/api/v1/analyze/287545"
 
 # Full pipeline, pixel distance only (fastest)
 curl -X POST "http://localhost:8000/api/v1/analyze/287545?depth_pro=none"
 
-# Full pipeline with fast depth (~2s)
+# Full pipeline with depth-corrected pixel distance (~2s)
 curl -X POST "http://localhost:8000/api/v1/analyze/287545?depth_pro=fast"
 
 # Segmentation only, JSON only
@@ -139,6 +140,10 @@ curl -X POST "http://localhost:8000/api/v1/analyze/287545?steps=segment&visualiz
 
 # Eye detection with visualization, no depth
 curl -X POST "http://localhost:8000/api/v1/analyze/287545?steps=eyes&depth_pro=none"
+
+# Upload image (no COCO required)
+curl -X POST "http://localhost:8000/api/v1/analyze/upload" \
+  -F "file=@my_photo.jpg" -G -d "depth_pro=fast"
 ```
 
 ## Example Output
@@ -154,22 +159,22 @@ The annotated image shows all three layers of the pipeline output:
 
 #### Reading the Distance Labels
 
-**Intra-animal label** (on solid lines):
+**Intra-animal label** (on solid lines) — cumulative by depth mode:
 
-With metric depth (Depth Pro):
 ```
-48.9 px | 0.10m | ! sheep IOD
-```
-- `48.9 px` — Layer 1: pixel distance
-- `0.10m` — Layer 3: metric distance estimated by Depth Pro (meters)
-- `! sheep IOD` — Sanity check result against known biology
+# depth_pro=none
+48.9 px
 
-With fast depth (DA V2):
-```
+# depth_pro=fast (DA V2)
 48.9 px | corr: 52.3 px
+
+# depth_pro=metric (Depth Pro) — includes all layers
+48.9 px | corr: 52.3 px | 0.10m | ! sheep IOD
 ```
 - `48.9 px` — Layer 1: pixel distance
 - `corr: 52.3 px` — Layer 2: depth-corrected pixel distance (perspective-compensated)
+- `0.10m` — Layer 3: metric distance estimated by Depth Pro (meters)
+- `! sheep IOD` — Sanity check result against known biology
 
 **IOD** = Inter-Ocular Distance (the distance between an animal's two eyes). Each species has a known biological IOD range used to validate whether the metric measurement is reasonable.
 
@@ -178,21 +183,23 @@ With fast depth (DA V2):
 - `!` (yellow) = **WARNING** — outside range but within 50% tolerance
 - `x` (red) = **FAIL** — clearly unreasonable, likely eye detection or depth error
 
-**Inter-animal label** (on dashed lines):
+**Inter-animal label** (on dashed lines) — cumulative by depth mode:
 
-With metric depth:
 ```
-#0-#1 R-eye: 175.6 px | 2.50m
-```
+# depth_pro=none
+#0-#1 R-eye: 175.6 px
 
-With fast depth:
-```
+# depth_pro=fast
 #0-#1 R-eye: 170.5 px | corr: 184.7 px
+
+# depth_pro=metric
+#0-#1 R-eye: 175.6 px | corr: 184.7 px | 2.50m
 ```
 - `#0-#1` — animal pair IDs
 - `R-eye` — measured between each animal's right eye
 - `175.6 px` — pixel distance
-- `2.50m` or `corr: 184.7 px` — metric or depth-corrected distance (no sanity check — no biological reference for inter-animal distance)
+- `corr: 184.7 px` — depth-corrected pixel distance
+- `2.50m` — metric distance (no sanity check — no biological reference for inter-animal distance)
 
 ## Test Images
 
@@ -269,8 +276,7 @@ animal-metrology/
 │   ├── test_annotations/           # Minimal COCO annotation JSON
 │   └── sample_results.csv          # Pipeline output CSV
 ├── scripts/
-│   ├── run_demo.py                 # One-command demo
-│   └── generate_architecture.py    # Architecture diagram
+│   └── run_demo.py                 # One-command demo
 ├── docs/architecture.png
 ├── Dockerfile, docker-compose.yml
 ├── requirements.txt, .env.example
