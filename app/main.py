@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.routers import analyze, health
+from app.utils.version import APP_VERSION
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -17,7 +18,7 @@ app = FastAPI(
         "Image segmentation + metrology pipeline for measuring "
         "inter-ocular and inter-animal eye distances using COCO dataset."
     ),
-    version="1.0.0",
+    version=APP_VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
 )
