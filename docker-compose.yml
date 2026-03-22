@@ -9,9 +9,10 @@ services:
     volumes:
       - ./data:/app/data
       - ./outputs:/app/outputs
+      - ./weights:/app/weights
     env_file:
       - .env
     environment:
-      - COCO_IMAGES_DIR=/app/data/coco/val2017
-      - COCO_ANNOTATIONS_FILE=/app/data/coco/annotations/instances_val2017.json
+      - COCO_IMAGES_DIR=/app/data/test_images
+      - COCO_ANNOTATIONS_FILE=/app/data/test_annotations/test_instances.json
     restart: unless-stopped

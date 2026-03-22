@@ -23,22 +23,37 @@ class TestCOCOFilter:
         resp = client.get("/api/v1/coco/animals", params={"min_animals": 0})
         assert resp.status_code == 422
 
-    def test_list_animals_returns_valid_response(self):
-        """Should return 200 with data or 404/500 if COCO not available."""
+    def test_list_animals_returns_images_or_404(self):
+        """Should return images if COCO data available, 404 otherwise."""
         resp = client.get("/api/v1/coco/animals")
-        assert resp.status_code in (200, 404, 500)
+        if resp.status_code == 200:
+            data = resp.json()
+            assert "total_images_found" in data
+            assert data["total_images_found"] >= 0
+            assert "sample_images" in data
+        else:
+            assert resp.status_code == 404
 
 
 class TestAnalyze:
-    def test_analyze_invalid_image_returns_error(self):
-        """Non-existent image_id should return 404 or 500."""
+    def test_analyze_nonexistent_image_returns_404(self):
+        """Non-existent image_id should return 404."""
         resp = client.post("/api/v1/analyze/99999999")
         assert resp.status_code in (404, 500)
+        data = resp.json()
+        assert "detail" in data
 
     def test_analyze_accepts_steps_param(self):
         """Verify steps query parameter is accepted (even if image not found)."""
         resp = client.post("/api/v1/analyze/99999999?steps=segment&visualize=false")
         assert resp.status_code in (404, 500)
+        data = resp.json()
+        assert "detail" in data
+
+    def test_analyze_rejects_invalid_steps(self):
+        """Invalid steps value should return 422."""
+        resp = client.post("/api/v1/analyze/287545?steps=invalid")
+        assert resp.status_code == 422
 
 
 class TestCOCOFilterService:
