@@ -104,10 +104,11 @@ def _run_pipeline(
     seg_svc = get_segmentation_service()
     seg_result = seg_svc.segment_animals(image_path)
 
-    # Default: no eyes, no distances
+    # Default: no eyes, no distances, no warnings
     eye_pairs = [EyePair() for _ in seg_result.animals]
     intra_distances = []
     inter_distances = []
+    warnings: list[str] = []
 
     # --- Stage 2: Eye detection (if steps >= eyes) ---
     if steps in (PipelineSteps.eyes, PipelineSteps.full):
@@ -149,8 +150,16 @@ def _run_pipeline(
                     depth_map = depth_result.depth_map
                     if depth_result.is_metric:
                         focal_length = depth_result.focal_length_px
+                    elif depth_pro == DepthMode.metric:
+                        warnings.append(
+                            "Depth Pro not available — fell back to DA V2 (fast mode). "
+                            "Metric distance (meters) will not be computed. "
+                            "Install Depth Pro: pip install git+https://github.com/apple/ml-depth-pro.git"
+                        )
             except Exception:
                 logger.warning("Depth estimation failed, continuing without it", exc_info=True)
+                if depth_pro != DepthMode.none:
+                    warnings.append("Depth estimation failed, continuing with pixel distances only.")
 
         intra_distances, inter_distances = measure_all(
             animals,
@@ -227,6 +236,7 @@ def _run_pipeline(
         intra_distances=intra_distances,
         inter_distances=inter_distances,
         annotated_image_path=annotated_image_path,
+        warnings=warnings,
     ).model_dump()
 
 

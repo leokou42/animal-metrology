@@ -65,6 +65,7 @@ class MeasurementResult(BaseModel):
     intra_distances: list[IntraAnimalDistance]
     inter_distances: list[InterAnimalDistance]
     annotated_image_path: str | None = None
+    warnings: list[str] = []
 
 
 class HealthResponse(BaseModel):
