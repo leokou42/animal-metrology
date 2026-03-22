@@ -28,7 +28,9 @@ class IntraAnimalDistance(BaseModel):
     right_eye: Point
     # Layer 1: pixel distance
     pixel_distance: float
-    # Layer 2: metric distance (None if no metric depth available)
+    # Layer 2a: depth-corrected pixel distance (relative depth, DA V2)
+    depth_corrected_px: float | None = None
+    # Layer 2b: metric distance (Depth Pro only)
     metric_distance_m: float | None = None
     depth_left_eye_m: float | None = None
     depth_right_eye_m: float | None = None
@@ -48,7 +50,9 @@ class InterAnimalDistance(BaseModel):
     eye_b: Point
     # Layer 1: pixel distance
     pixel_distance: float
-    # Layer 2: metric distance
+    # Layer 2a: depth-corrected pixel distance (relative depth, DA V2)
+    depth_corrected_px: float | None = None
+    # Layer 2b: metric distance (Depth Pro only)
     metric_distance_m: float | None = None
 
 

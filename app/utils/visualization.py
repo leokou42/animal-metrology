@@ -236,14 +236,16 @@ def draw_distances(
 
             cv2.line(image, pt1, pt2, color, thickness=2)
 
-            # Build 3-layer label: "64.8 px | 0.19m | v cat IOD"
-            mid_x = (pt1[0] + pt2[0]) // 2
-            mid_y = (pt1[1] + pt2[1]) // 2
-
+            # Build label with available depth info:
+            #   pixel only:    "64.8 px"
+            #   fast (DA V2):  "64.8 px | corr: 72.3 px"
+            #   metric:        "64.8 px | 0.19m | v cat IOD"
             label = f"{d['distance_px']:.1f} px"
             label_color = color
 
+            corrected_px = d.get("depth_corrected_px")
             metric_m = d.get("metric_distance_m")
+
             if metric_m is not None:
                 label += f" | {metric_m:.2f}m"
 
@@ -253,9 +255,14 @@ def draw_distances(
                     icon = SANITY_ICONS[check]
                     label += f" | {icon} {category} IOD"
                     label_color = SANITY_COLORS.get(check, color)
+            elif corrected_px is not None:
+                label += f" | corr: {corrected_px:.1f} px"
 
+            # Place label below the eye line, offset perpendicular to avoid
+            # covering the bounding box / eye markers
+            label_x, label_y = _offset_label(pt1, pt2, offset_px=30)
             draw_text_with_bg(
-                image, label, (mid_x, mid_y - 8),
+                image, label, (label_x, label_y),
                 font_scale=FONT_SCALE_DISTANCE, color=label_color,
             )
 
@@ -267,22 +274,59 @@ def draw_distances(
 
             _draw_dashed_line(image, pt1, pt2, color=(255, 255, 255), thickness=2)
 
-            mid_x = (pt1[0] + pt2[0]) // 2
-            mid_y = (pt1[1] + pt2[1]) // 2
-
             # Build label: "#0-#1 R-eye: 295.6 px | 2.41m"
             label_text = f"{d['distance_px']:.1f} px"
+            corrected_px = d.get("depth_corrected_px")
             metric_m = d.get("metric_distance_m")
             if metric_m is not None:
                 label_text += f" | {metric_m:.2f}m"
+            elif corrected_px is not None:
+                label_text += f" | corr: {corrected_px:.1f} px"
 
             pair_label = f"#{d['animal_a_id']}-#{d['animal_b_id']} R-eye: {label_text}"
+            label_x, label_y = _offset_label(pt1, pt2, offset_px=25)
             draw_text_with_bg(
-                image, pair_label, (mid_x, mid_y - 8),
+                image, pair_label, (label_x, label_y),
                 font_scale=FONT_SCALE_DISTANCE, color=(255, 255, 255),
             )
 
     return image
+
+
+def _offset_label(
+    pt1: tuple[int, int],
+    pt2: tuple[int, int],
+    offset_px: int = 30,
+) -> tuple[int, int]:
+    """Compute a label position offset perpendicular to the line pt1→pt2.
+
+    Places the label below the midpoint of the line (perpendicular direction),
+    so it doesn't cover the eyes or bounding boxes.
+    If the line is nearly horizontal, offsets downward.
+    If the line is nearly vertical, offsets to the right.
+    """
+    mid_x = (pt1[0] + pt2[0]) // 2
+    mid_y = (pt1[1] + pt2[1]) // 2
+
+    dx = pt2[0] - pt1[0]
+    dy = pt2[1] - pt1[1]
+    length = np.sqrt(dx * dx + dy * dy)
+
+    if length < 1:
+        return mid_x, mid_y + offset_px
+
+    # Perpendicular direction (rotated 90 degrees)
+    perp_x = -dy / length
+    perp_y = dx / length
+
+    # Always push label downward (positive y direction)
+    if perp_y < 0:
+        perp_x, perp_y = -perp_x, -perp_y
+
+    label_x = int(mid_x + perp_x * offset_px)
+    label_y = int(mid_y + perp_y * offset_px)
+
+    return label_x, label_y
 
 
 def _draw_dashed_line(

@@ -28,13 +28,15 @@ Straight-line Euclidean distance between two eye coordinates on the 2D image pla
 - **Unit**: pixels
 - **Limitation**: No physical meaning — distant animals appear smaller, compressing pixel distances.
 
-### Layer 2: Depth-Corrected Distance
+### Layer 2: Depth-Corrected Pixel Distance
 
 Still a pixel distance, but corrected for perspective using Depth Anything V2's relative depth map. Solves the problem that distant animals look smaller in the image, compressing their pixel distances. This layer compensates for that compression.
 
+- **Formula**: `corrected = pixel_dist * avg_depth / min(depth_a, depth_b)`
 - **Unit**: pixels (perspective-corrected)
 - **Advantage**: Proportional relationships are closer to reality than Layer 1
 - **Note**: Relative depth only — no absolute scale, so still not a physical measurement
+- **API**: Use `depth_pro=fast` to get this layer (~2s, no Depth Pro needed)
 
 ### Layer 3: Metric Distance
 
@@ -153,12 +155,21 @@ The annotated image shows all three layers of the pipeline output:
 #### Reading the Distance Labels
 
 **Intra-animal label** (on solid lines):
+
+With metric depth (Depth Pro):
 ```
 48.9 px | 0.10m | ! sheep IOD
 ```
 - `48.9 px` — Layer 1: pixel distance
-- `0.10m` — Layer 2/3: metric distance estimated by Depth Pro (meters)
-- `! sheep IOD` — Layer 3 sanity check result against known biology
+- `0.10m` — Layer 3: metric distance estimated by Depth Pro (meters)
+- `! sheep IOD` — Sanity check result against known biology
+
+With fast depth (DA V2):
+```
+48.9 px | corr: 52.3 px
+```
+- `48.9 px` — Layer 1: pixel distance
+- `corr: 52.3 px` — Layer 2: depth-corrected pixel distance (perspective-compensated)
 
 **IOD** = Inter-Ocular Distance (the distance between an animal's two eyes). Each species has a known biological IOD range used to validate whether the metric measurement is reasonable.
 
@@ -168,13 +179,20 @@ The annotated image shows all three layers of the pipeline output:
 - `x` (red) = **FAIL** — clearly unreasonable, likely eye detection or depth error
 
 **Inter-animal label** (on dashed lines):
+
+With metric depth:
 ```
 #0-#1 R-eye: 175.6 px | 2.50m
+```
+
+With fast depth:
+```
+#0-#1 R-eye: 170.5 px | corr: 184.7 px
 ```
 - `#0-#1` — animal pair IDs
 - `R-eye` — measured between each animal's right eye
 - `175.6 px` — pixel distance
-- `2.50m` — metric distance (no sanity check — no biological reference for inter-animal distance)
+- `2.50m` or `corr: 184.7 px` — metric or depth-corrected distance (no sanity check — no biological reference for inter-animal distance)
 
 ## Test Images
 

@@ -98,6 +98,35 @@ def compute_metric_distance(
     return dist, z1, z2
 
 
+def compute_depth_corrected_px(
+    p1: Point,
+    p2: Point,
+    pixel_distance: float,
+    depth_map: np.ndarray,
+) -> float:
+    """Correct pixel distance using relative depth to compensate for perspective.
+
+    When two points are at different depths, the closer one appears larger in
+    the image. This function normalizes the pixel distance by the depth ratio
+    so that objects at different distances are more fairly compared.
+
+    Formula: corrected = pixel_dist * avg_depth / min(depth_a, depth_b)
+    """
+    h, w = depth_map.shape[:2]
+    x1, y1 = int(min(max(p1.x, 0), w - 1)), int(min(max(p1.y, 0), h - 1))
+    x2, y2 = int(min(max(p2.x, 0), w - 1)), int(min(max(p2.y, 0), h - 1))
+
+    d1 = float(depth_map[y1, x1])
+    d2 = float(depth_map[y2, x2])
+
+    min_depth = min(d1, d2)
+    if min_depth < 1e-6:
+        return pixel_distance
+
+    avg_depth = (d1 + d2) / 2.0
+    return pixel_distance * avg_depth / min_depth
+
+
 def sanity_check(category: str, metric_distance_m: float) -> str | None:
     """Check if measured IOD falls within expected biological range.
 
@@ -151,12 +180,21 @@ def compute_intra_distances(
             animal.eyes.left_eye, animal.eyes.right_eye
         )
 
+        corrected_px = None
         metric_dist = None
         depth_l = None
         depth_r = None
         check_result = None
         iod_range = None
 
+        # Depth-corrected pixel distance (works with any depth map)
+        if depth_map is not None:
+            corrected_px = compute_depth_corrected_px(
+                animal.eyes.left_eye, animal.eyes.right_eye,
+                pixel_dist, depth_map,
+            )
+
+        # Metric 3D distance (requires focal length from Depth Pro)
         if has_metric:
             metric_dist, depth_l, depth_r = compute_metric_distance(
                 animal.eyes.left_eye, animal.eyes.right_eye,
@@ -173,6 +211,7 @@ def compute_intra_distances(
                 left_eye=animal.eyes.left_eye,
                 right_eye=animal.eyes.right_eye,
                 pixel_distance=round(pixel_dist, 2),
+                depth_corrected_px=round(corrected_px, 2) if corrected_px is not None else None,
                 metric_distance_m=round(metric_dist, 4) if metric_dist is not None else None,
                 depth_left_eye_m=round(depth_l, 4) if depth_l is not None else None,
                 depth_right_eye_m=round(depth_r, 4) if depth_r is not None else None,
@@ -205,7 +244,15 @@ def compute_inter_distances(
     for a, b in combinations(eligible, 2):
         pixel_dist = compute_euclidean_distance(a.eyes.right_eye, b.eyes.right_eye)
 
+        corrected_px = None
         metric_dist = None
+
+        if depth_map is not None:
+            corrected_px = compute_depth_corrected_px(
+                a.eyes.right_eye, b.eyes.right_eye,
+                pixel_dist, depth_map,
+            )
+
         if has_metric:
             metric_dist, _, _ = compute_metric_distance(
                 a.eyes.right_eye, b.eyes.right_eye,
@@ -221,6 +268,7 @@ def compute_inter_distances(
                 eye_a=a.eyes.right_eye,
                 eye_b=b.eyes.right_eye,
                 pixel_distance=round(pixel_dist, 2),
+                depth_corrected_px=round(corrected_px, 2) if corrected_px is not None else None,
                 metric_distance_m=round(metric_dist, 4) if metric_dist is not None else None,
             )
         )

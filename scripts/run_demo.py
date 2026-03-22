@@ -5,7 +5,6 @@ Usage:
 
 Outputs:
     - Annotated images: outputs/analyze_{image_id}.jpg
-    - Depth maps: outputs/depth_{image_id}.jpg (if depth model available)
     - CSV: data/sample_results.csv
     - Console summary table
 """
@@ -22,22 +21,6 @@ from app.services.segmentation import SegmentationService
 from app.services.eye_detection import EyeDetectionService
 from app.services.measurement import measure_all
 
-
-def _save_depth_heatmap(depth_map, output_path):
-    """Save depth map as a color heatmap image."""
-    import cv2
-    import numpy as np
-
-    # Normalize to 0-255
-    d_min, d_max = depth_map.min(), depth_map.max()
-    if d_max - d_min > 0:
-        normalized = ((depth_map - d_min) / (d_max - d_min) * 255).astype("uint8")
-    else:
-        normalized = (depth_map * 0).astype("uint8")
-
-    # Apply colormap
-    heatmap = cv2.applyColorMap(normalized, cv2.COLORMAP_INFERNO)
-    cv2.imwrite(str(output_path), heatmap)
 
 
 def _print_table(image_results):
@@ -142,9 +125,6 @@ def main():
                 if depth_result.is_metric:
                     focal_length = depth_result.focal_length_px
 
-                # Save depth heatmap
-                heatmap_path = settings.output_dir / f"depth_{img_id}.jpg"
-                _save_depth_heatmap(depth_map, heatmap_path)
             except Exception as e:
                 print(f" depth failed: {e}", end="")
 
@@ -178,6 +158,7 @@ def main():
              "left_eye": (d.left_eye.x, d.left_eye.y),
              "right_eye": (d.right_eye.x, d.right_eye.y),
              "distance_px": d.pixel_distance,
+             "depth_corrected_px": d.depth_corrected_px,
              "metric_distance_m": d.metric_distance_m,
              "sanity_check_result": d.sanity_check_result}
             for d in intra
@@ -186,6 +167,7 @@ def main():
             {"animal_a_id": d.animal_a_id, "animal_b_id": d.animal_b_id,
              "eye_a": (d.eye_a.x, d.eye_a.y), "eye_b": (d.eye_b.x, d.eye_b.y),
              "distance_px": d.pixel_distance,
+             "depth_corrected_px": d.depth_corrected_px,
              "metric_distance_m": d.metric_distance_m}
             for d in inter
         ]

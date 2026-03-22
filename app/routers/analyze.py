@@ -191,6 +191,7 @@ def _run_pipeline(
                     "left_eye": (d.left_eye.x, d.left_eye.y),
                     "right_eye": (d.right_eye.x, d.right_eye.y),
                     "distance_px": d.pixel_distance,
+                    "depth_corrected_px": d.depth_corrected_px,
                     "metric_distance_m": d.metric_distance_m,
                     "sanity_check_result": d.sanity_check_result,
                 }
@@ -203,6 +204,7 @@ def _run_pipeline(
                     "eye_a": (d.eye_a.x, d.eye_a.y),
                     "eye_b": (d.eye_b.x, d.eye_b.y),
                     "distance_px": d.pixel_distance,
+                    "depth_corrected_px": d.depth_corrected_px,
                     "metric_distance_m": d.metric_distance_m,
                 }
                 for d in inter_distances
@@ -226,64 +228,6 @@ def _run_pipeline(
         inter_distances=inter_distances,
         annotated_image_path=annotated_image_path,
     ).model_dump()
-
-
-@router.post("/analyze/{image_id}", response_model=MeasurementResult)
-async def analyze_image(
-    image_id: int,
-    steps: PipelineSteps = Query(
-        default=PipelineSteps.full,
-        description="Pipeline depth: segment, eyes, or full",
-    ),
-    visualize: bool = Query(
-        default=True,
-        description="Generate annotated image in outputs/",
-    ),
-    depth_pro: DepthMode = Query(
-        default=DepthMode.metric,
-        description="Depth mode: none (pixel only), fast (DA V2 ~2s), metric (Depth Pro ~30-60s)",
-    ),
-):
-    """Run analysis pipeline on a COCO image.
-
-    Control what to compute with `steps`:
-      - segment: animal contours + bounding boxes only
-      - eyes: + eye keypoint coordinates
-      - full: + inter-ocular and inter-animal distances
-
-    Control depth model with `depth_pro`:
-      - none: pixel distances only (fastest)
-      - fast: Depth Anything V2 relative depth (~2s)
-      - metric: Depth Pro metric depth in meters (~30-60s)
-
-    Control output with `visualize`:
-      - true: also save annotated image to /outputs/analyze_{image_id}.jpg
-      - false: JSON response only
-    """
-    try:
-        coco_svc = get_coco_filter_service()
-        img_data = coco_svc.get_image_annotations(image_id)
-        img_info = img_data["image_info"]
-
-        image_path = Path(coco_svc.images_dir) / img_info["file_name"]
-        if not image_path.exists():
-            raise FileNotFoundError(f"Image file not found: {image_path}")
-
-        return _run_pipeline(
-            image_path=str(image_path),
-            image_id=image_id,
-            image_file=img_info["file_name"],
-            image_width=img_info["width"],
-            image_height=img_info["height"],
-            steps=steps,
-            visualize=visualize,
-            depth_pro=depth_pro,
-        )
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        logger.exception("Analysis failed for image %d", image_id)
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/analyze/upload", response_model=MeasurementResult)
@@ -347,3 +291,61 @@ async def analyze_uploaded_image(
     finally:
         if tmp_path:
             Path(tmp_path).unlink(missing_ok=True)
+
+
+@router.post("/analyze/{image_id}", response_model=MeasurementResult)
+async def analyze_image(
+    image_id: int,
+    steps: PipelineSteps = Query(
+        default=PipelineSteps.full,
+        description="Pipeline depth: segment, eyes, or full",
+    ),
+    visualize: bool = Query(
+        default=True,
+        description="Generate annotated image in outputs/",
+    ),
+    depth_pro: DepthMode = Query(
+        default=DepthMode.metric,
+        description="Depth mode: none (pixel only), fast (DA V2 ~2s), metric (Depth Pro ~30-60s)",
+    ),
+):
+    """Run analysis pipeline on a COCO image.
+
+    Control what to compute with `steps`:
+      - segment: animal contours + bounding boxes only
+      - eyes: + eye keypoint coordinates
+      - full: + inter-ocular and inter-animal distances
+
+    Control depth model with `depth_pro`:
+      - none: pixel distances only (fastest)
+      - fast: Depth Anything V2 relative depth (~2s)
+      - metric: Depth Pro metric depth in meters (~30-60s)
+
+    Control output with `visualize`:
+      - true: also save annotated image to /outputs/analyze_{image_id}.jpg
+      - false: JSON response only
+    """
+    try:
+        coco_svc = get_coco_filter_service()
+        img_data = coco_svc.get_image_annotations(image_id)
+        img_info = img_data["image_info"]
+
+        image_path = Path(coco_svc.images_dir) / img_info["file_name"]
+        if not image_path.exists():
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+
+        return _run_pipeline(
+            image_path=str(image_path),
+            image_id=image_id,
+            image_file=img_info["file_name"],
+            image_width=img_info["width"],
+            image_height=img_info["height"],
+            steps=steps,
+            visualize=visualize,
+            depth_pro=depth_pro,
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.exception("Analysis failed for image %d", image_id)
+        raise HTTPException(status_code=500, detail=str(e))
