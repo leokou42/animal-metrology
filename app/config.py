@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     depth_model: str = "depth-anything/Depth-Anything-V2-Small-hf"
     depth_enabled: bool = True
     depth_device: str = "auto"
+    install_depth_pro: bool = False  # Docker build-time flag; ignored at runtime
 
     # API
     api_host: str = "0.0.0.0"

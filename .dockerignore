@@ -1,0 +1,11 @@
+data/
+weights/
+outputs/
+.venv/
+.git/
+.env
+.env.*
+__pycache__/
+*.pyc
+.superpowers/
+docs/
